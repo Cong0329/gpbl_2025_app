@@ -1,31 +1,40 @@
-import { createStackNavigator } from '@react-navigation/stack';
-import LoginScreen from './screens/login';
-import RegisterScreen from './screens/register';
+import React from 'react';
+import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
+import { Ionicons } from '@expo/vector-icons';
 import HomeScreen from './screens/home';
 import HistoryScreen from './screens/history';
 import SettingsScreen from './screens/setting';
-import Navbar from './screens/navbar';
 
-const Stack = createStackNavigator();
+const Tab = createBottomTabNavigator();
 
-export default function AppNavigator() {
+export default function App() {
   return (
-    <Stack.Navigator initialRouteName="Login" >
-      <Stack.Screen name="Login" component={LoginScreen} />
-      <Stack.Screen name="Register" component={RegisterScreen} />
-      <Stack.Screen
-        name="Home"
-        component={HomeScreen}
-        options={{
-          header: () => <Navbar />
-        }}
-      />
-      <Stack.Screen name="History" component={HistoryScreen} options={{
-          header: () => <Navbar />
-        }} />
-      <Stack.Screen name="Settings" component={SettingsScreen} options={{
-          header: () => <Navbar />
-        }} />
-    </Stack.Navigator>
+      <Tab.Navigator
+        screenOptions={({ route }) => ({
+          tabBarIcon: ({ focused, color, size }) => {
+            let iconName;
+
+            if (route.name === 'Home') {
+              iconName = focused ? 'home' : 'home-outline';
+            } else if (route.name === 'History') {
+              iconName = focused ? 'time' : 'time-outline';
+            } else if (route.name === 'Setting') {
+              iconName = focused ? 'settings' : 'settings-outline';
+            }
+
+            return <Ionicons name={iconName} size={size} color={color} />;
+          },
+          tabBarActiveTintColor: 'green',
+          tabBarInactiveTintColor: 'gray',
+          tabBarStyle: {
+            width: '100%',
+            position: 'absolute',
+          },
+        })}
+      >
+        <Tab.Screen name="Home" component={HomeScreen} />
+        <Tab.Screen name="History" component={HistoryScreen} />
+        <Tab.Screen name="Setting" component={SettingsScreen} />
+      </Tab.Navigator>
   );
 }
