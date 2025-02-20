@@ -1,11 +1,13 @@
 import React, { useState, useCallback, useEffect, useRef } from 'react';
-import { View, Text, TouchableOpacity, FlatList, Alert } from 'react-native';
+import { View, Text, TouchableOpacity, FlatList, Alert, Switch } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import * as Progress from 'react-native-progress';
 import Svg, { Defs, LinearGradient, Stop, Rect } from 'react-native-svg';
 import { Picker } from '@react-native-picker/picker';
 import { db } from '@/config/firebaseConfig';
 import { ref, set, update } from "firebase/database";
+import Icon from 'react-native-vector-icons/Ionicons';
+
 
 export default function HomeScreen() {
   const [humidity, setHumidity] = useState(60);
@@ -16,6 +18,9 @@ export default function HomeScreen() {
   const [selectedDuration, setSelectedDuration] = useState();
   const [durationCountdown, setDurationCountdown] = useState(null);
   const [isDurationRunning, setIsDurationRunning] = useState(false);
+
+  const [isEnabled, setIsEnabled] = useState(false);
+  const toggleSwitch = () => setIsEnabled((prevState) => !prevState);
 
 
   const toggleDisplay = () => setShowHumidity(prevState => !prevState);
@@ -44,6 +49,7 @@ export default function HomeScreen() {
           if (prev <= 1) {
             clearInterval(interval);
             setIsRunning(false);
+            startDurationCountdown(selectedDuration);
             return "Time's up!";
           }
           return prev - 1;
@@ -59,7 +65,7 @@ export default function HomeScreen() {
   );
 
   const startDurationCountdown = (time) => {
-    let totalSeconds = parseInt(time) * 60;
+    let totalSeconds = parseInt(time);
     if (totalSeconds > 0) {
       setIsDurationRunning(true);
       setDurationCountdown(totalSeconds);
@@ -76,7 +82,17 @@ export default function HomeScreen() {
       }, 1000);
     }
   };
+
+  const handleAutoRun = () => {
+    if (!selectedTime || !selectedDuration) {
+      Alert.alert("Error", "Please select both time and duration!");
+      return;
+    }
   
+    startCountdown(selectedTime);
+  };
+  
+
 
   return (
     <View style={{ flex: 1 }}>
@@ -162,65 +178,49 @@ export default function HomeScreen() {
           <Text style={{ fontSize: 16, fontWeight: 'bold' }}>How often</Text>
 
           <View style={{ width: '40%', height: 50, borderColor: '#ccc', borderRadius: 5, overflow: 'hidden', justifyContent: 'center' }}>
-            <Picker
-              selectedValue={selectedTime}
-              onValueChange={(itemValue) => setSelectedTime(itemValue)}
-            >
+            <Picker selectedValue={selectedTime} onValueChange={(itemValue) => setSelectedTime(itemValue)}>
               <Picker.Item label="hour" value="0" />
-              <Picker.Item label="1 hour" value="1" />
-              <Picker.Item label="2 hour" value="2" />
-              <Picker.Item label="3 hour" value="3" />
-              <Picker.Item label="4 hour" value="4" />
-              <Picker.Item label="5 hour" value="5" />
+              <Picker.Item label="1h" value="1" />
+              <Picker.Item label="2h" value="2" />
+              <Picker.Item label="3h" value="3" />
+              <Picker.Item label="4h" value="4" />
+              <Picker.Item label="5h" value="5" />
             </Picker>
           </View>
-          <TouchableOpacity onPress={() => startCountdown(parseInt(selectedTime))} style={{ paddingHorizontal: 10 }}>
-            <Text style={{ fontSize: 24, color: 'blue' }}>▶️</Text>
+
+          <TouchableOpacity onPress={() => startCountdown(parseInt(selectedTime))} style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 10 }}>
+            {isRunning && <Text style={{ marginLeft: 5, fontSize: 16, color: 'black' }}>{countdown}s</Text>}
           </TouchableOpacity>
         </View>
-        {isRunning && (
-          <Text style={{ fontSize: 18, textAlign: 'center', marginVertical: 5, color: 'black' }}>
-            {typeof countdown === "string" ? countdown : `Countdown: ${countdown}s`}
-          </Text>
-        )}
 
-        <FlatList
-          data={timeList}
-          keyExtractor={(item, index) => index.toString()}
-          renderItem={({ item }) => (
-            <Text style={{ fontSize: 16, textAlign: 'center', marginVertical: 5 }}>{item}</Text>
-          )}
-          style={{ maxHeight: 60 }}
-          nestedScrollEnabled={true}
-        />
-
-        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 10 }}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between'}}>
           <Text style={{ fontSize: 16, fontWeight: 'bold' }}>How long</Text>
 
           <View style={{ width: '40%', height: 50, borderColor: '#ccc', borderRadius: 5, overflow: 'hidden', justifyContent: 'center' }}>
-            <Picker
-              selectedValue={selectedDuration}
-              onValueChange={(itemValue) => setSelectedDuration(itemValue)}
-            >
-              <Picker.Item label="minute" value="0" />
-              <Picker.Item label="1 minute" value="1" />
-              <Picker.Item label="2 minute" value="2" />
-              <Picker.Item label="3 minute" value="3" />
-              <Picker.Item label="4 minute" value="4" />
-              <Picker.Item label="5 minute" value="5" />
+            <Picker selectedValue={selectedDuration} onValueChange={(itemValue) => setSelectedDuration(itemValue)}>
+              <Picker.Item label="second" value="0" />
+              <Picker.Item label="10s" value="10" />
+              <Picker.Item label="20s" value="20" />
+              <Picker.Item label="30s" value="30" />
+              <Picker.Item label="40s" value="40" />
+              <Picker.Item label="50s" value="50" />
             </Picker>
           </View>
-
-          <TouchableOpacity onPress={() => startDurationCountdown(selectedDuration)} style={{ paddingHorizontal: 10 }}>
-            <Text style={{ fontSize: 24, color: 'blue' }}>▶️</Text>
+          <TouchableOpacity onPress={() => startDurationCountdown(parseInt(selectedDuration))} style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 10 }}>
+            {isDurationRunning && <Text style={{ marginLeft: 5, fontSize: 16, color: 'black' }}>{durationCountdown}s</Text>}
           </TouchableOpacity>
         </View>
-        {isDurationRunning && (
-          <Text style={{ fontSize: 18, textAlign: 'center', marginVertical: 5, color: 'black' }}>
-            {typeof durationCountdown === "string" ? durationCountdown : `Countdown: ${durationCountdown}s`}
-          </Text>
-        )}
+
+        <View style={{ flex: 1, justifyContent: "flex-end", alignItems: "center", marginBottom: 40 }}>
+          <TouchableOpacity 
+            style={{ backgroundColor: "green", paddingVertical: 10, paddingHorizontal: 30, borderRadius: 25 }}
+            onPress={handleAutoRun}
+          >
+            <Text style={{ fontSize: 16, color: "white", fontWeight: "bold" }}>Auto Run</Text>
+          </TouchableOpacity>
+        </View>
       </View>
+
     </View>
   );
 }
