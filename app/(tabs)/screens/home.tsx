@@ -5,11 +5,15 @@ import * as Progress from 'react-native-progress';
 import Svg, { Defs, LinearGradient, Stop, Rect } from 'react-native-svg';
 import { Picker } from '@react-native-picker/picker';
 import { db } from '@/config/firebaseConfig';
-import { ref, set, update, onValue, get } from "firebase/database";
+import { ref, set, update, onValue, get, push } from "firebase/database";
 import Icon from 'react-native-vector-icons/Ionicons';
+import { useAuto } from './autoContext';
 
 
 export default function HomeScreen() {
+
+  const { isAuto, setIsAuto } = useAuto();
+
   const [humidity, setHumidity] = useState(0);
   const [temperature, setTemperature] = useState(0);
   const [showHumidity, setShowHumidity] = useState(true);
@@ -23,11 +27,30 @@ export default function HomeScreen() {
   const [isRunning, setIsRunning] = useState(false);
   const intervalRef = useRef(null);
   const durationRef = useRef(null);
-  const [isAutoRunning, setIsAutoRunning] = useState(false);
   
   const [selectedDuration, setSelectedDuration] = useState();
   const [durationCountdown, setDurationCountdown] = useState(null);
   const [isDurationRunning, setIsDurationRunning] = useState(false);
+
+  const [isAutoRunning, setIsAutoRunning] = useState(false);
+
+  const timeOptions = [
+    { label: "hour", value: "0" },
+    { label: "1h", value: "1" },
+    { label: "2h", value: "2" },
+    { label: "3h", value: "3" },
+    { label: "4h", value: "4" },
+    { label: "5h", value: "5" },
+  ];
+  
+  const durationOptions = [
+    { label: "second", value: "0" },
+    { label: "10s", value: "10" },
+    { label: "20s", value: "20" },
+    { label: "30s", value: "30" },
+    { label: "40s", value: "40" },
+    { label: "50s", value: "50" },
+  ];
 
   const toggleDisplay = () => setShowHumidity(prevState => !prevState);
   
@@ -46,10 +69,35 @@ export default function HomeScreen() {
   const handleSpray = () => {
     const newStatus = !isSpraying;
     setIsSpraying(newStatus);
+    
+    const now = new Date().toISOString();
   
-    set(ref(db, 'actions/spray'), { status: newStatus ? "on" : "off" });
+    if (newStatus) {
+      set(ref(db, "actions/spray"), { status: "on" });
+  
+      set(ref(db, "manualWatering/startTime"), now);
+    } else {
+      set(ref(db, "actions/spray"), { status: "off" });
+  
+      get(ref(db, "manualWatering/startTime")).then((snapshot) => {
+        if (snapshot.exists()) {
+          const startTime = snapshot.val();
+          const endTime = now;
+          const duration =
+            Math.round((new Date(endTime) - new Date(startTime)) / 1000);
+  
+          push(ref(db, "wateringHistory"), {
+            startTime,
+            endTime,
+            duration,
+          });
+  
+          set(ref(db, "manualWatering/startTime"), null);
+        }
+      });
+    }
   };
-
+  
   useEffect(() => {
     const humidityRef = ref(db, "Moisturepercent");
     const tempRef = ref(db, "Temperature");
@@ -77,10 +125,12 @@ export default function HomeScreen() {
       clearInterval(intervalRef.current);
     }
   
-    let totalSeconds = parseInt(time) * 60 * 60;
+    let totalSeconds = parseInt(time);
     if (totalSeconds > 0) {
       setIsRunning(true);
       setCountdown(totalSeconds);
+
+      set(ref(db, 'actions/spray/status'), "off");
   
       intervalRef.current = setInterval(() => {
         setCountdown((prev) => {
@@ -95,7 +145,7 @@ export default function HomeScreen() {
       }, 1000);
     }
   };
-  
+
   const startDurationCountdown = (time) => {
     if (durationRef.current) {
       clearInterval(durationRef.current);
@@ -106,12 +156,25 @@ export default function HomeScreen() {
       setIsDurationRunning(true);
       setDurationCountdown(totalSeconds);
   
+      const startTime = new Date().toISOString();
+      set(ref(db, "autoWatering/startTime"), startTime);
+      set(ref(db, "actions/spray/status"), "on");
+  
       durationRef.current = setInterval(() => {
         setDurationCountdown((prev) => {
           if (prev <= 1) {
             clearInterval(durationRef.current);
             setIsDurationRunning(false);
             startCountdown(selectedTime);
+  
+            const endTime = new Date().toISOString();
+  
+            push(ref(db, "wateringHistory"), {
+              startTime,
+              endTime,
+              duration: totalSeconds,
+            });
+  
             return "Time's up!";
           }
           return prev - 1;
@@ -119,18 +182,44 @@ export default function HomeScreen() {
       }, 1000);
     }
   };
+
+  const handlePause = () => {
+    if (isDurationRunning) {
+      clearInterval(durationRef.current);
+      setIsDurationRunning(false);
   
+      const endTime = new Date().toISOString();
+  
+      get(ref(db, "autoWatering/startTime")).then(async (snapshot) => {
+        if (snapshot.exists()) {
+          const startTime = snapshot.val();
+          const duration =
+            Math.round((new Date(endTime) - new Date(startTime)) / 1000);
+  
+          push(ref(db, "wateringHistory"), {
+            startTime,
+            endTime,
+            duration,
+          });
+  
+          await set(ref(db, "autoWatering/startTime"), null);
+        }
+      });
+  
+      set(ref(db, "actions/spray/status"), "off");
+      setIsPause(true);
+    }
+  };
+  
+
   const handleAutoRun = () => {
     if (!selectedTime || !selectedDuration) {
       Alert.alert("Error", "Please select both time and duration!");
       return;
     }
-    setIsAutoRunning(true);
     startCountdown(selectedTime);
   };
   
-
-
   return (
     <View style={{ flex: 1 }}>
       <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: 'white' }}>
@@ -212,38 +301,31 @@ export default function HomeScreen() {
 
       <View style={{ flex: 1, padding: 20, backgroundColor: 'white' }}>
         <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
-          <Text style={{ fontSize: 16, fontWeight: 'bold' }}>How often</Text>
+          <Text style={{ fontSize: 16, fontWeight: 'bold', flex: 2 }}>How often</Text>
 
-          <View style={{ width: '40%', height: 50, borderColor: '#ccc', borderRadius: 5, overflow: 'hidden', justifyContent: 'center' }}>
+          <View style={{height: 50, borderColor: '#ccc', borderRadius: 5, overflow: 'hidden', justifyContent: 'center', flex: 3 }}>
             <Picker selectedValue={selectedTime} onValueChange={(itemValue) => setSelectedTime(itemValue)}>
-              <Picker.Item label="hour" value="0" />
-              <Picker.Item label="1h" value="1" />
-              <Picker.Item label="2h" value="2" />
-              <Picker.Item label="3h" value="3" />
-              <Picker.Item label="4h" value="4" />
-              <Picker.Item label="5h" value="5" />
+              {timeOptions.map((item, index) => (
+                <Picker.Item key={index} label={item.label} value={item.value} />
+              ))}
             </Picker>
           </View>
-
-          <TouchableOpacity onPress={() => startCountdown(parseInt(selectedTime))} style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 10 }}>
+          <TouchableOpacity onPress={() => startCountdown(parseInt(selectedTime))} style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 10, flex: 1, }}>
             {isRunning && <Text style={{ marginLeft: 5, fontSize: 16, color: 'black' }}>{countdown}s</Text>}
           </TouchableOpacity>
         </View>
 
         <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between'}}>
-          <Text style={{ fontSize: 16, fontWeight: 'bold' }}>How long</Text>
+          <Text style={{ fontSize: 16, fontWeight: 'bold', flex: 2  }}>How long</Text>
 
-          <View style={{ width: '40%', height: 50, borderColor: '#ccc', borderRadius: 5, overflow: 'hidden', justifyContent: 'center' }}>
+          <View style={{height: 50, borderColor: '#ccc', borderRadius: 5, overflow: 'hidden', justifyContent: 'center', flex: 3 }}>
             <Picker selectedValue={selectedDuration} onValueChange={(itemValue) => setSelectedDuration(itemValue)}>
-              <Picker.Item label="second" value="0" />
-              <Picker.Item label="10s" value="10" />
-              <Picker.Item label="20s" value="20" />
-              <Picker.Item label="30s" value="30" />
-              <Picker.Item label="40s" value="40" />
-              <Picker.Item label="50s" value="50" />
+              {durationOptions.map((item, index) => (
+                <Picker.Item key={index} label={item.label} value={item.value} />
+              ))}
             </Picker>
           </View>
-          <TouchableOpacity onPress={() => startDurationCountdown(parseInt(selectedDuration))} style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 10 }}>
+          <TouchableOpacity onPress={() => startDurationCountdown(parseInt(selectedDuration))} style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 10, flex: 1,  }}>
             {isDurationRunning && <Text style={{ marginLeft: 5, fontSize: 16, color: 'black' }}>{durationCountdown}s</Text>}
           </TouchableOpacity>
         </View>
@@ -251,16 +333,39 @@ export default function HomeScreen() {
         <View style={{ flex: 1, justifyContent: "flex-end", alignItems: "center", marginBottom: 70 }}>
           <TouchableOpacity 
             style={{ 
-              backgroundColor: isAutoRunning ? "gray" : "green", 
+              backgroundColor: isAuto ? (isAutoRunning ? "gray" : "green") : "gray", 
               paddingVertical: 10, 
               paddingHorizontal: 30, 
               borderRadius: 25, 
-              opacity: isAutoRunning ? 0.5 : 1 
             }}
-            onPress={isAutoRunning ? null : handleAutoRun}
-            disabled={isAutoRunning} 
+            onPress={() => {
+              if (!isAuto) return;
+
+              if (isAutoRunning) {
+                clearInterval(intervalRef.current);
+                clearInterval(durationRef.current);
+                setIsRunning(false);
+                setIsDurationRunning(false);
+                setCountdown(null);
+                setDurationCountdown(null);
+
+                set(ref(db, 'actions/spray/status'), "off"); 
+                setIsSpraying(false);
+              } else {
+                if (!selectedTime || !selectedDuration) {
+                  Alert.alert("Error", "Please select both time and duration!");
+                  return;
+                }
+                startCountdown(selectedTime);
+              }
+
+              setIsAutoRunning(!isAutoRunning);
+            }}
+            disabled={!isAuto} 
           >
-            <Text style={{ fontSize: 16, color: "white", fontWeight: "bold" }}>Auto Run</Text>
+            <Text style={{ fontSize: 16, color: "white", fontWeight: "bold" }}>
+              {isAutoRunning ? "Pause" : "Auto Run"}
+            </Text>
           </TouchableOpacity>
         </View>
       </View>
