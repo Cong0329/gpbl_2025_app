@@ -5,27 +5,44 @@ import * as Progress from 'react-native-progress';
 import Svg, { Defs, LinearGradient, Stop, Rect } from 'react-native-svg';
 import { Picker } from '@react-native-picker/picker';
 import { db } from '@/config/firebaseConfig';
-import { ref, set, update } from "firebase/database";
+import { ref, set, update, onValue, get } from "firebase/database";
 import Icon from 'react-native-vector-icons/Ionicons';
 
 
 export default function HomeScreen() {
-  const [humidity, setHumidity] = useState(60);
-  const [temperature, setTemperature] = useState(25);
+  const [humidity, setHumidity] = useState(0);
+  const [temperature, setTemperature] = useState(0);
   const [showHumidity, setShowHumidity] = useState(true);
-  const [gradientKey, setGradientKey] = useState(Date.now());
+  const gradientKey = "sensorGradient";
+
+  
+  const [selectedTime, setSelectedTime] = useState();
+  const [timeList, setTimeList] = useState([]);
+  const [countdown, setCountdown] = useState(null);
+  const [isPause, setIsPause] = useState(false);
+  const [isRunning, setIsRunning] = useState(false);
+  const intervalRef = useRef(null);
+  const durationRef = useRef(null);
+  const [isAutoRunning, setIsAutoRunning] = useState(false);
   
   const [selectedDuration, setSelectedDuration] = useState();
   const [durationCountdown, setDurationCountdown] = useState(null);
   const [isDurationRunning, setIsDurationRunning] = useState(false);
 
-  const [isEnabled, setIsEnabled] = useState(false);
-  const toggleSwitch = () => setIsEnabled((prevState) => !prevState);
-
-
   const toggleDisplay = () => setShowHumidity(prevState => !prevState);
   
   const [isSpraying, setIsSpraying] = useState(false);
+  useEffect(() => {
+    const sprayRef = ref(db, "actions/spray/status");
+
+    const unsubscribe = onValue(sprayRef, (snapshot) => {
+      if (snapshot.exists()) {
+        setIsSpraying(snapshot.val() === "on");
+      }
+    });
+
+    return () => unsubscribe();
+  }, []);
   const handleSpray = () => {
     const newStatus = !isSpraying;
     setIsSpraying(newStatus);
@@ -33,21 +50,42 @@ export default function HomeScreen() {
     set(ref(db, 'actions/spray'), { status: newStatus ? "on" : "off" });
   };
 
-  const [selectedTime, setSelectedTime] = useState();
-  const [timeList, setTimeList] = useState([]);
-  const [countdown, setCountdown] = useState(null);
-  const [isRunning, setIsRunning] = useState(false);
+  useEffect(() => {
+    const humidityRef = ref(db, "Moisturepercent");
+    const tempRef = ref(db, "Temperature");
+
+    const unsubscribeHumidity = onValue(humidityRef, (snapshot) => {
+      if (snapshot.exists()) {
+        setHumidity(snapshot.val());
+      }
+    });
+
+    const unsubscribeTemp = onValue(tempRef, (snapshot) => {
+      if (snapshot.exists()) {
+        setTemperature(snapshot.val());
+      }
+    });
+
+    return () => {
+      unsubscribeHumidity();
+      unsubscribeTemp();
+    };
+  }, []);
 
   const startCountdown = (time) => {
+    if (intervalRef.current) {
+      clearInterval(intervalRef.current);
+    }
+  
     let totalSeconds = parseInt(time) * 60 * 60;
     if (totalSeconds > 0) {
       setIsRunning(true);
       setCountdown(totalSeconds);
-
-      const interval = setInterval(() => {
-        setCountdown(prev => {
+  
+      intervalRef.current = setInterval(() => {
+        setCountdown((prev) => {
           if (prev <= 1) {
-            clearInterval(interval);
+            clearInterval(intervalRef.current);
             setIsRunning(false);
             startDurationCountdown(selectedDuration);
             return "Time's up!";
@@ -57,24 +95,23 @@ export default function HomeScreen() {
       }, 1000);
     }
   };
-
-  useFocusEffect(
-    useCallback(() => {
-      setGradientKey(Date.now());
-    }, [])
-  );
-
+  
   const startDurationCountdown = (time) => {
+    if (durationRef.current) {
+      clearInterval(durationRef.current);
+    }
+  
     let totalSeconds = parseInt(time);
     if (totalSeconds > 0) {
       setIsDurationRunning(true);
       setDurationCountdown(totalSeconds);
   
-      const interval = setInterval(() => {
-        setDurationCountdown(prev => {
+      durationRef.current = setInterval(() => {
+        setDurationCountdown((prev) => {
           if (prev <= 1) {
-            clearInterval(interval);
+            clearInterval(durationRef.current);
             setIsDurationRunning(false);
+            startCountdown(selectedTime);
             return "Time's up!";
           }
           return prev - 1;
@@ -82,13 +119,13 @@ export default function HomeScreen() {
       }, 1000);
     }
   };
-
+  
   const handleAutoRun = () => {
     if (!selectedTime || !selectedDuration) {
       Alert.alert("Error", "Please select both time and duration!");
       return;
     }
-  
+    setIsAutoRunning(true);
     startCountdown(selectedTime);
   };
   
@@ -138,7 +175,7 @@ export default function HomeScreen() {
           }}
           onPress={handleSpray}
         >
-          <Text style={{ color: 'white', fontSize: 16, fontWeight: 'bold' }}>Spray</Text>
+          <Text style={{ color: isSpraying ? 'green' : 'white', fontSize: 16, fontWeight: 'bold' }}>Spray</Text>
         </TouchableOpacity>
         
         {showHumidity ? (
@@ -168,7 +205,7 @@ export default function HomeScreen() {
               textStyle={{ fontSize: 18, fontWeight: 'bold' }}
               formatText={() => `${temperature}°C`}
             />
-            <Text style={{ fontSize: 18, fontWeight: 'bold', marginTop: 10, color: 'white' }}>Temperature</Text>
+            <Text style={{ fontSize: 18, fontWeight: 'bold', marginTop: 10, color: 'rgb(255, 88, 13)' }}>Temperature</Text>
           </>
         )}
       </View>
@@ -211,10 +248,17 @@ export default function HomeScreen() {
           </TouchableOpacity>
         </View>
 
-        <View style={{ flex: 1, justifyContent: "flex-end", alignItems: "center", marginBottom: 40 }}>
+        <View style={{ flex: 1, justifyContent: "flex-end", alignItems: "center", marginBottom: 70 }}>
           <TouchableOpacity 
-            style={{ backgroundColor: "green", paddingVertical: 10, paddingHorizontal: 30, borderRadius: 25 }}
-            onPress={handleAutoRun}
+            style={{ 
+              backgroundColor: isAutoRunning ? "gray" : "green", 
+              paddingVertical: 10, 
+              paddingHorizontal: 30, 
+              borderRadius: 25, 
+              opacity: isAutoRunning ? 0.5 : 1 
+            }}
+            onPress={isAutoRunning ? null : handleAutoRun}
+            disabled={isAutoRunning} 
           >
             <Text style={{ fontSize: 16, color: "white", fontWeight: "bold" }}>Auto Run</Text>
           </TouchableOpacity>
