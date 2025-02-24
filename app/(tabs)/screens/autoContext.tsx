@@ -12,7 +12,6 @@ export const AutoProvider = ({ children }) => {
   );
 };
 
-// Custom hook để sử dụng context
 export const useAuto = () => {
   const context = useContext(AutoContext);
   if (!context) {

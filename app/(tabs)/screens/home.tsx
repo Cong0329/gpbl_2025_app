@@ -8,7 +8,7 @@ import { db } from '@/config/firebaseConfig';
 import { ref, set, update, onValue, get, push } from "firebase/database";
 import Icon from 'react-native-vector-icons/Ionicons';
 import { useAuto } from './autoContext';
-
+import { useTimeDuration } from "./timeDurationContext";
 
 export default function HomeScreen() {
 
@@ -18,7 +18,6 @@ export default function HomeScreen() {
   const [temperature, setTemperature] = useState(0);
   const [showHumidity, setShowHumidity] = useState(true);
   const gradientKey = "sensorGradient";
-
   
   const [selectedTime, setSelectedTime] = useState();
   const [timeList, setTimeList] = useState([]);
@@ -34,23 +33,10 @@ export default function HomeScreen() {
 
   const [isAutoRunning, setIsAutoRunning] = useState(false);
 
-  const timeOptions = [
-    { label: "hour", value: "0" },
-    { label: "1h", value: "1" },
-    { label: "2h", value: "2" },
-    { label: "3h", value: "3" },
-    { label: "4h", value: "4" },
-    { label: "5h", value: "5" },
-  ];
+  const { timeOptions, durationOptions, addTimeOption, addDurationOption } = useTimeDuration();
   
-  const durationOptions = [
-    { label: "second", value: "0" },
-    { label: "10s", value: "10" },
-    { label: "20s", value: "20" },
-    { label: "30s", value: "30" },
-    { label: "40s", value: "40" },
-    { label: "50s", value: "50" },
-  ];
+  const [newTime, setNewTime] = useState("");
+  const [newDuration, setNewDuration] = useState("");
 
   const toggleDisplay = () => setShowHumidity(prevState => !prevState);
   
@@ -211,7 +197,6 @@ export default function HomeScreen() {
     }
   };
   
-
   const handleAutoRun = () => {
     if (!selectedTime || !selectedDuration) {
       Alert.alert("Error", "Please select both time and duration!");
@@ -219,6 +204,7 @@ export default function HomeScreen() {
     }
     startCountdown(selectedTime);
   };
+
   
   return (
     <View style={{ flex: 1 }}>
